@@ -1,0 +1,58 @@
+# ───────────────
+# Node.js & npm
+# ───────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ───────────────
+# Build / dist
+# ───────────────
+dist/
+build/
+tmp/
+temp/
+
+# ───────────────
+# Environment variables
+# ───────────────
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# ───────────────
+# Logs & debug
+# ───────────────
+logs/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ───────────────
+# OS / IDE / Editor files
+# ───────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ───────────────
+# Coverage / tests
+# ───────────────
+coverage/
+.nyc_output/
+jest-html-reporters-*.html
+
+# ───────────────
+# Misc
+# ───────────────
+*.bak
+*.tmp
+*.old
