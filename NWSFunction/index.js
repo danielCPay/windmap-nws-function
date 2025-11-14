@@ -8,7 +8,15 @@ export async function run(context, timer) {
     const alerts = await fetchWindAlerts();
     context.log(`✅ Se obtuvieron ${alerts.length} alertas relevantes`);
 
-    // 🔌 Conexión a MySQL
+    // Si NO hay alertas, NO seguir
+    if (alerts.length === 0) {
+      context.log(
+        "ℹ️ No hay alertas relevantes. No se registró nada en la base de datos."
+      );
+      return;
+    }
+
+    // Conexión a MySQL
     const connection = await mysql.createConnection({
       host: process.env.DB_HOST,
       user: process.env.DB_USER,
@@ -26,7 +34,7 @@ export async function run(context, timer) {
            details = VALUES(details),
            sent = VALUES(sent),
            updated_at = CURRENT_TIMESTAMP,
-           is_processed = 0`, // 👈 reinicia el flag
+           is_processed = 0`, // reinicia el flag
         [
           alert.id,
           alert.event,

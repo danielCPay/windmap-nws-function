@@ -56,65 +56,96 @@ export const fetchWindAlerts = async () => {
   const state = process.env.STATE || "CA";
   const url = `https://api.weather.gov/alerts/active?area=${state}`;
 
-  console.log(`🌪️ Obteniendo alertas activas para ${state}...`);
-  const { data } = await axios.get(url);
+  try {
+    console.log(`🌪️ Obteniendo alertas activas para ${state}...`);
+    const { data } = await axios.get(url);
 
-  // Filtrar solo alertas relacionadas con viento
-  const windAlerts = (data.features || []).filter((a) =>
-    a.properties?.event?.toLowerCase().includes("wind")
-  );
-
-  console.log(
-    `💨 Se encontraron ${windAlerts.length} alertas de viento activas.`
-  );
-
-  const results = [];
-
-  for (const alert of windAlerts) {
-    const affectedZones = alert.properties?.affectedZones ?? [];
-
-    // Obtener estaciones por zona (en paralelo)
-    const allStations = (
-      await Promise.all(affectedZones.map(fetchZoneStations))
-    ).flat();
-
-    // Eliminar duplicados
-    const uniqueStations = [...new Set(allStations)];
-
-    // Obtener observaciones por estación (en paralelo)
-    const observations = await Promise.all(
-      uniqueStations.map(fetchStationObservation)
+    // Filtrar solo alertas relacionadas con viento
+    const windAlerts = (data.features || []).filter((a) =>
+      a.properties?.event?.toLowerCase().includes("winter")
     );
 
-    // ✅ Filtrar solo estaciones con viento >= 15 mph
-    const stationsWithWind = observations
-      .filter((o) => o.coordinates && o.windSpeedMph >= 15)
-      .map((o) => ({
-        stationUrl: o.stationUrl,
-        coordinates: o.coordinates,
-        windSpeedKmh: o.windSpeedKmh,
-        windSpeedMph: o.windSpeedMph,
-      }));
+    console.log(
+      `💨 Se encontraron ${windAlerts.length} alertas de viento activas.`
+    );
 
-    if (stationsWithWind.length > 0) {
-      console.log(
-        `✅ Alerta: ${alert.properties.event} (${stationsWithWind.length} estaciones con ≥ 15 mph)`
-      );
+    const results = [];
 
-      results.push({
-        id: alert.id,
-        event: alert.properties.event,
-        headline: alert.properties.headline,
-        observationStations: stationsWithWind.map((s) => s.stationUrl), // 👈 URLs de las estaciones filtradas
-        stations: stationsWithWind, // 👈 info detallada de cada estación
-        affectedZones,
-        sent: alert.properties.sent,
-      });
+    for (const alert of windAlerts) {
+      try {
+        const affectedZones = alert.properties?.affectedZones ?? [];
+
+        // Obtener estaciones por zona (en paralelo) con manejo de errores
+        const allStations = (
+          await Promise.all(
+            affectedZones.map(async (zone) => {
+              try {
+                return await fetchZoneStations(zone);
+              } catch (zoneErr) {
+                console.error(
+                  `❌ Error obteniendo estaciones para zona ${zone}:`,
+                  zoneErr
+                );
+                return [];
+              }
+            })
+          )
+        ).flat();
+
+        // Eliminar duplicados
+        const uniqueStations = [...new Set(allStations)];
+
+        // Obtener observaciones por estación (en paralelo) con manejo de errores
+        const observations = await Promise.all(
+          uniqueStations.map(async (station) => {
+            try {
+              return await fetchStationObservation(station);
+            } catch (obsErr) {
+              console.error(
+                `❌ Error obteniendo observación para estación ${station}:`,
+                obsErr
+              );
+              return null;
+            }
+          })
+        );
+
+        // Filtrar solo observaciones válidas y con viento >= 15 mph
+        const stationsWithWind = observations
+          .filter((o) => o && o.coordinates && o.windSpeedMph >= 15)
+          .map((o) => ({
+            stationUrl: o.stationUrl,
+            coordinates: o.coordinates,
+            windSpeedKmh: o.windSpeedKmh,
+            windSpeedMph: o.windSpeedMph,
+          }));
+
+        if (stationsWithWind.length > 0) {
+          console.log(
+            `✅ Alerta: ${alert.properties.event} (${stationsWithWind.length} estaciones con ≥ 15 mph)`
+          );
+
+          results.push({
+            id: alert.id,
+            event: alert.properties.event,
+            headline: alert.properties.headline,
+            observationStations: stationsWithWind.map((s) => s.stationUrl),
+            stations: stationsWithWind,
+            affectedZones,
+            sent: alert.properties.sent,
+          });
+        }
+      } catch (alertErr) {
+        console.error(`❌ Error procesando alerta ${alert.id}:`, alertErr);
+      }
     }
-  }
 
-  console.log(
-    `🏁 Proceso completado. ${results.length} alertas relevantes encontradas.`
-  );
-  return results;
+    console.log(
+      `🏁 Proceso completado. ${results.length} alertas relevantes encontradas.`
+    );
+    return results;
+  } catch (err) {
+    console.error("❌ Error al obtener alertas de viento desde la API:", err);
+    return []; // Retorna un array vacío si falla todo
+  }
 };
