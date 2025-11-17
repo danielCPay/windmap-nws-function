@@ -5,7 +5,7 @@ export async function run(context, timer) {
   context.log("🌪️ Ejecutando NWSFunction...");
 
   try {
-    const alerts = await fetchWindAlerts();
+    const alerts = await fetchWindAlerts(context);
     context.log(`✅ Se obtuvieron ${alerts.length} alertas relevantes`);
 
     // Si NO hay alertas, NO seguir
@@ -24,29 +24,55 @@ export async function run(context, timer) {
       database: process.env.DB_NAME,
     });
 
+    let cambios = 0;
+
     // 🧾 Insertar o actualizar cada alerta
     for (const alert of alerts) {
-      await connection.execute(
+      // 🔧 Normalizar JSON para evitar falsos cambios
+      const details = JSON.stringify(alert, Object.keys(alert).sort());
+
+      const [result] = await connection.execute(
         `INSERT INTO alerts (id, event, headline, sent, details, is_processed)
          VALUES (?, ?, ?, ?, ?, 0)
          ON DUPLICATE KEY UPDATE
-           headline = VALUES(headline),
-           details = VALUES(details),
-           sent = VALUES(sent),
-           updated_at = CURRENT_TIMESTAMP,
-           is_processed = 0`, // reinicia el flag
-        [
-          alert.id,
-          alert.event,
-          alert.headline,
-          alert.sent,
-          JSON.stringify(alert),
-        ]
+           headline = IF(headline <> VALUES(headline), VALUES(headline), headline),
+           details = IF(details <> VALUES(details), VALUES(details), details),
+           sent = IF(sent <> VALUES(sent), VALUES(sent), sent),
+           updated_at = IF(
+              headline <> VALUES(headline)
+              OR details <> VALUES(details)
+              OR sent <> VALUES(sent),
+              CURRENT_TIMESTAMP,
+              updated_at
+           ),
+           is_processed = IF(
+              headline <> VALUES(headline)
+              OR details <> VALUES(details)
+              OR sent <> VALUES(sent),
+              0,
+              is_processed
+           )`,
+        [alert.id, alert.event, alert.headline, alert.sent, details]
       );
+      if (result.affectedRows === 1) {
+        cambios++;
+        context.log(`🟢 Insert nueva alerta: ${alert.id}`);
+      } else if (result.affectedRows === 2) {
+        cambios++;
+        context.log(`🔵 Alerta actualizada: ${alert.id}`);
+      } else {
+        context.log(`⚪ Sin cambios: ${alert.id}`);
+      }
     }
 
     await connection.end();
-    context.log("💾 Alertas registradas correctamente en la base de datos.");
+
+    // Mostrar mensaje solo cuando realmente hubo cambios:
+    if (cambios > 0) {
+      context.log("💾 Alertas registradas correctamente en la base de datos.");
+    } else {
+      context.log("ℹ️ No hubo nuevas alertas ni actualizaciones.");
+    }
   } catch (error) {
     context.log.error("❌ Error ejecutando NWSFunction:", error);
   }
